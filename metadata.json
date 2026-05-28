@@ -1,0 +1,6 @@
+{
+  "name": "Inventory Management System",
+  "description": "Système complet de gestion de stock avec tableau de bord, alertes, CRUD de produits et catégories, transactions et rapports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

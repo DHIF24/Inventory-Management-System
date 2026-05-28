@@ -1,0 +1,98 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Phase 3: Primitive Definitions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Helper functions for reading requests
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // 2. Validation Blueprints
+    function isValidUser(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 100
+          && data.email is string && data.email.size() > 0 && data.email.size() <= 200
+          && data.role in ['admin', 'user'];
+    }
+
+    function isValidProduct(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 150
+          && data.sku is string && data.sku.size() > 0 && data.sku.size() <= 100
+          && data.category is string && data.category.size() >= 0 && data.category.size() <= 100
+          && data.description is string && data.description.size() >= 0 && data.description.size() <= 1000
+          && data.quantity is number && data.quantity >= 0
+          && data.minStock is number && data.minStock >= 0
+          && data.price is number && data.price >= 0
+          && data.supplier is string && data.supplier.size() >= 0 && data.supplier.size() <= 200
+          && data.userId == request.auth.uid;
+    }
+
+    function isValidCategory(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 100
+          && data.color is string && data.color.size() >= 4 && data.color.size() <= 10
+          && data.userId == request.auth.uid;
+    }
+
+    function isValidTransaction(data) {
+      return data.productId is string && data.productId.size() > 0 && data.productId.size() <= 128
+          && data.productName is string && data.productName.size() > 0 && data.productName.size() <= 150
+          && data.type in ['entrée', 'sortie', 'ajustement']
+          && data.quantity is number && data.quantity > 0
+          && data.note is string && data.note.size() <= 1000
+          && data.userId == request.auth.uid;
+    }
+
+    // Rules for "/users/{userId}"
+    match /users/{userId} {
+      allow read, get: if isSignedIn() && (request.auth.uid == userId);
+      allow create: if isSignedIn() && (request.auth.uid == userId) && isValidUser(incoming());
+      allow update: if isSignedIn() && (request.auth.uid == userId) && isValidUser(incoming())
+                       && incoming().role == existing().role; // Cannot escalate own role
+    }
+
+    // Rules for "/products/{productId}"
+    match /products/{productId} {
+      allow get: if isSignedIn() && (existing().userId == request.auth.uid);
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && (incoming().userId == request.auth.uid) && isValidProduct(incoming()) && isValidId(productId);
+      allow update: if isSignedIn() && (existing().userId == request.auth.uid)
+                       && (incoming().userId == request.auth.uid) && isValidProduct(incoming()) && isValidId(productId)
+                       && incoming().createdAt == existing().createdAt; // Immutability of createdAt
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid);
+    }
+
+    // Rules for "/categories/{categoryId}"
+    match /categories/{categoryId} {
+      allow get: if isSignedIn() && (existing().userId == request.auth.uid);
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && (incoming().userId == request.auth.uid) && isValidCategory(incoming()) && isValidId(categoryId);
+      allow update: if isSignedIn() && (existing().userId == request.auth.uid)
+                       && (incoming().userId == request.auth.uid) && isValidCategory(incoming()) && isValidId(categoryId);
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid);
+    }
+
+    // Rules for "/transactions/{transactionId}"
+    match /transactions/{transactionId} {
+      allow get: if isSignedIn() && (existing().userId == request.auth.uid);
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid);
+      // Transactions are immutable ledgers: allow creation, deny update/delete
+      allow create: if isSignedIn() && (incoming().userId == request.auth.uid) && isValidTransaction(incoming()) && isValidId(transactionId);
+    }
+  }
+}
